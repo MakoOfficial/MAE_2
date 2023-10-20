@@ -38,15 +38,17 @@ if __name__ == '__main__':
     train_df, valid_df = myKit.split_data(bone_dir, csv_name, 20, 0.1, 128)
     train_dataset, val_dataset = myKit.create_data_loader(train_df, valid_df)
 
-    train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
+    # train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     # val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
     writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
-    optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95), weight_decay=args.weight_decay)
-    lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
+    model = MAE_ViT(224, 16, mask_ratio=args.mask_ratio).to(device)
+    optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95),
+                              weight_decay=args.weight_decay)
+    lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8),
+                                0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func, verbose=True)
 
     step_count = 0
@@ -56,7 +58,10 @@ if __name__ == '__main__':
         losses = []
         for img, label in tqdm(iter(dataloader)):
             step_count += 1
-            img = img.to(device)
+            print(img > shape)
+            # img = img.to(device)
+            # img = torch.einsum('nhwc->nchw', img)
+            img = img.type(torch.FloatTensor).to(device)
             predicted_img, mask = model(img)
             loss = torch.mean((predicted_img - img) ** 2 * mask) / args.mask_ratio
             loss.backward()
@@ -73,12 +78,14 @@ if __name__ == '__main__':
         model.eval()
         with torch.no_grad():
             val_img = torch.stack([val_dataset[i][0] for i in range(16)])
-            val_img = val_img.to(device)
+            # val_img = val_img.to(device)
+            # val_img = torch.einsum('nhwc->nchw', val_img)
+            val_img = val_img.type(torch.FloatTensor).to(device)
             predicted_val_img, mask = model(val_img)
             predicted_val_img = predicted_val_img * mask + val_img * (1 - mask)
             img = torch.cat([val_img * (1 - mask), predicted_val_img, val_img], dim=0)
             img = rearrange(img, '(v h1 w1) c h w -> c (h1 h) (w1 v w)', w1=2, v=3)
             writer.add_image('mae_image', (img + 1) / 2, global_step=e)
-        
+
         ''' save model '''
         torch.save(model, args.model_path)

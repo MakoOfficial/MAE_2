@@ -46,7 +46,7 @@ def seed_everything(seed=1234):
 #     return MaskedAutoencoderViT(img_size=image_size, patch_size=patch_size, embed_dim=768, depth=12, num_heads=12,
 #                                 decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
 #                                 mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6))
-    # return Ensemble(mae, embedding_dim, gender_size)
+# return Ensemble(mae, embedding_dim, gender_size)
 
 
 # 随机删除一个图片上的像素，p为执行概率，scale擦除部分占据图片比例的范围，ratio擦除部分的长宽比范围
@@ -83,9 +83,10 @@ transform_valid = Compose([
     ToTensorV2()
 ])
 
-
 imagenet_mean = np.array([0.485, 0.456, 0.406])
 imagenet_std = np.array([0.229, 0.224, 0.225])
+
+
 def read_image(file_path, image_size=512):
     """读取图片，并统一修改为512x512"""
     img = Image.open(file_path)
@@ -106,10 +107,9 @@ def read_image(file_path, image_size=512):
     img = np.array(img.convert("RGB")) / 255.
     img = img - imagenet_mean
     img = img / imagenet_std
-    
-    # return img
-    return torch.einsum('nhwc->nchw', img)
 
+    return img
+    # return torch.einsum('nhwc->nchw', img)
 
 
 def one_hot(x):
@@ -162,7 +162,8 @@ def split_data(data_dir, csv_name, category_num, split_ratio, aug_num):
         stratify=age_df['boneage_category']
     )
     # print('train', raw_train_df.shape[0], 'validation', valid_df.shape[0])
-    train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(drop=True)
+    train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x.sample(aug_num, replace=True)).reset_index(
+        drop=True)
     # 注意的是，这里对df进行多列分组，因为boneage_category为10类， male为2类，所以总共有20类，而apply对每一类进行随机采样，并且有放回的抽取，所以会生成1w的数据
     # train_df = raw_train_df.groupby(['boneage_category']).apply(lambda x: x)
     # print('New Data Size:', train_df.shape[0], 'Old Size:', raw_train_df.shape[0])
@@ -198,7 +199,7 @@ class BAATrainDataset(Dataset.Dataset):
         # 'zscore']
         # return (transform_train(image=read_image(row["path"]))['image'], Tensor([row['male']])), one_hot(row["boneage"])
         return transform_train(image=read_image(row["path"], image_size=224))['image'], row[
-        'zscore']
+            'zscore']
         # return Image.open(row["path"])
 
     def __len__(self):
@@ -293,7 +294,6 @@ def train_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, l
         start_time = time.time()
         # 在不同的设备上运行该模型
 
-
         for batch_idx, data in enumerate(train_loader):
             # #put data to GPU
             image = data
@@ -318,9 +318,10 @@ def train_fn(net, train_dataset, valid_dataset, num_epochs, lr, wd, lr_period, l
         val_total_size, mae_loss = MAE_valid_fn(net=net, val_loader=val_loader, devices=devices)
 
         train_loss, val_mae = training_loss / total_size, mae_loss / val_total_size
-        record.append([epoch, round(train_loss.item()*100, 2), round(val_mae.item()*100, 2), optimizer.param_groups[0]["lr"]])
+        record.append(
+            [epoch, round(train_loss.item() * 100, 2), round(val_mae.item() * 100, 2), optimizer.param_groups[0]["lr"]])
         print(
-            f'training loss is {round(train_loss.item()*100, 2)}, val loss is {round(val_mae.item()*100, 2)}, time : {round((time.time() - start_time), 2)}, lr:{optimizer.param_groups[0]["lr"]}')
+            f'training loss is {round(train_loss.item() * 100, 2)}, val loss is {round(val_mae.item() * 100, 2)}, time : {round((time.time() - start_time), 2)}, lr:{optimizer.param_groups[0]["lr"]}')
         scheduler.step()
         with open(record_path, 'a+', newline='') as csvfile:
             writer = csv.writer(csvfile)
