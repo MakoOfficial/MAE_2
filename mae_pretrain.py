@@ -23,9 +23,10 @@ if __name__ == '__main__':
     parser.add_argument('--mask_ratio', type=float, default=0.75)
     parser.add_argument('--total_epoch', type=int, default=800)
     parser.add_argument('--warmup_epoch', type=int, default=40)
-    parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
+    parser.add_argument('--model_path', type=str, default='../../autodl-tmp/vit-t-mae.pt')
     parser.add_argument('--data_path', default='../dog-breed-identification/train_valid_test/', type=str,
                         help='dataset path')
+    parser.add_argument("--local_rank", type=int)
 
     args = parser.parse_args()
 
@@ -54,7 +55,7 @@ if __name__ == '__main__':
     # train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     # val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     train_dataset = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-    val_dataset = datasets.ImageFolder(os.path.join(args.data_path, 'valid'), transform=transform_train)
+    val_dataset = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_train)
 
     # DDP Sampler
     sampler_train = torch.utils.data.DistributedSampler(
@@ -65,12 +66,12 @@ if __name__ == '__main__':
     dataloader = torch.utils.data.DataLoader(
         train_dataset, sampler=sampler_train,
         batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
+        num_workers=2,
+        pin_memory=True,
         drop_last=True,
     )
 
-    writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
+    writer = SummaryWriter(os.path.join('../../autodl-tmp', 'logs', 'IN-Dog_Classify', 'mae-pretrain'))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = MAE_ViT(224, 16, emb_dim=1024, mask_ratio=args.mask_ratio, encoder_head=16, decoder_head=16).to(device)

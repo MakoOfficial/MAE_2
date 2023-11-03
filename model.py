@@ -135,7 +135,7 @@ class MAE_ViT(torch.nn.Module):
         super().__init__()
 
         self.encoder = MAE_Encoder(image_size, patch_size, emb_dim, encoder_layer, encoder_head, mask_ratio)
-        self.decoder = MAE_Decoder(image_size, patch_size, emb_dim//2, decoder_layer, decoder_head)
+        self.decoder = MAE_Decoder(image_size, patch_size, emb_dim, decoder_layer, decoder_head)
 
     def forward(self, img):
         features, backward_indexes = self.encoder(img)
