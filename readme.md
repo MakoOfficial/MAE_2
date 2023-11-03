@@ -15,6 +15,8 @@ We mainly follow the implementation details in the paper. However, due to differ
 # pretrained with mae
 python mae_pretrain.py
 
+# dist run 
+CUDA_VISIBLE_DEVICES=0,1 OMP_NUM_THREADS=1 python -m torch.distributed.launch --nproc_per_node=2 mae_pretrain.py
 # train classifier from scratch
 python train_classifier.py
 

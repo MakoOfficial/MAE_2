@@ -10,6 +10,8 @@ import torchvision.transforms as transforms
 from model import *
 from utils import setup_seed
 import torchvision.datasets as datasets
+import torch.distributed as dist
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -35,8 +37,16 @@ if __name__ == '__main__':
     assert batch_size % load_batch_size == 0
     steps_per_update = batch_size // load_batch_size
 
+    # DDP
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(rank % torch.cuda.device_count())
+    dist.init_process_group(backend="nccl")
+    device = torch.device("cuda", local_rank)
+    print(f"[init] == local rank: {local_rank}, global rank: {rank} ==")
+
     transform_train = transforms.Compose([
-        transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+        transforms.RandomResizedCrop(224, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
@@ -45,13 +55,32 @@ if __name__ == '__main__':
     # val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     train_dataset = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     val_dataset = datasets.ImageFolder(os.path.join(args.data_path, 'valid'), transform=transform_train)
-    dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
+
+    # DDP Sampler
+    sampler_train = torch.utils.data.DistributedSampler(
+        train_dataset, shuffle=True
+    )
+    print("Sampler_train = %s" % str(sampler_train))
+
+    dataloader = torch.utils.data.DataLoader(
+        train_dataset, sampler=sampler_train,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=True,
+    )
+
     writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = MAE_ViT(224, 16, emb_dim=1024, mask_ratio=args.mask_ratio, encoder_head=16, decoder_head=16).to(device)
+    model = model.to(device)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
+
+
     optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95),
                               weight_decay=args.weight_decay)
+    print(optim)
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8),
                                 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func, verbose=True)
@@ -59,6 +88,7 @@ if __name__ == '__main__':
     step_count = 0
     optim.zero_grad()
     for e in range(args.total_epoch):
+        dataloader.sampler.set_epoch(e)
         model.train()
         losses = []
         for img, label in tqdm(iter(dataloader)):
